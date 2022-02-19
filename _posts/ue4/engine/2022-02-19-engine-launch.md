@@ -1,14 +1,18 @@
 ---
-title: "[ue4] UObject"
+title: "[ue4] Engine Launch"
 author: eeehjun
-date: 2022-02-18 00:00:00 +0900
+date: 2022-02-19 00:00:00 +0900
 categories: [Unreal Engine, Engine]
 tags: [ue4]
 ---
-UObject는 언리얼의 근간이 되는 오브젝트이다. <br/>
-이 장에서는 UObject의 생성, 삭제 및 TWeakObjectPtr의 작동 방식을 알아보았다.
+
 
 <!-- begin preview line -->
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;
+&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;
 &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;
 &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;
 &emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;&emsp;
@@ -17,280 +21,116 @@ UObject는 언리얼의 근간이 되는 오브젝트이다. <br/>
 
 
 ---
-## New Object
-![](/assets/img/ue/uobject-new-object.png)
-
-
-```cpp
-template< class T >
-T* NewObject(UObject* Outer = (UObject*)GetTransientPackage())
-{
-    return static_cast<T*>(StaticConstructObject_Internal(Params));
-}
-
-UObject* StaticAllocateObject(...)
-{
-    UObject* Obj = NULL;
-    if(InName == NAME_None)
-    {
-        InName = MakeUniqueObjectName(InOuter, InClass);
-    }
-    else
-    {
-        // See if object already exists.
-        Obj = StaticFindObjectFastInternal( /*Class=*/ NULL, InOuter, InName, true );
-    }
-
-
-    int32 TotalSize = InClass->GetPropertiesSize();
-    checkSlow(TotalSize);
-
-    if( Obj == NULL )
-    {	
-        int32 Alignment	= FMath::Max( 4, InClass->GetMinAlignment() );
-        Obj = (UObject *)GUObjectAllocator.AllocateUObject(TotalSize,Alignment,GIsInitialLoad);
-    }
-    else
-    {
-        // Replace an existing object without affecting the original's address or index.
-        check(!Obj->IsUnreachable());
-
-        check(!ObjectRestoreAfterInitProps); // otherwise recursive construction
-        ObjectRestoreAfterInitProps = Obj->GetRestoreForUObjectOverwrite();
-
-        // Remember linker, flags, index, and native class info.
-        Linker = Obj->GetLinker();
-        LinkerIndex = Obj->GetLinkerIndex();
-        InternalSetFlags |= (Obj->GetInternalFlags() & (EInternalObjectFlags::Native | EInternalObjectFlags::RootSet));
-    }
-}
-```
-{: file="UObjectGlobals.h"}
-
+## Engine Launch
+![](/assets/img/ue/engine-launch-overview.png)
 
 ```cpp
-UObjectBase* FUObjectAllocator::AllocateUObject(int32 Size, int32 Alignment, bool bAllowPermanent)
+int32 GuardedMain( const TCHAR* CmdLine )
 {
-     if (bPlaceInPerm)
+    EnginePreInit( CmdLine );
+
+    EngineInit();
+
+    while( !IsEngineExitRequested() )
     {
-        // Align current tail pointer and use it for object. 
-        uint8* AlignedPtr = Align( PermanentObjectPoolTail, Alignment );
-        // Update tail pointer.
-        PermanentObjectPoolTail = AlignedPtr + Size;
-        Result = (UObjectBase*)AlignedPtr;
+        EngineTick();
     }
-    else
-    {
-        // Allocate new memory of the appropriate size and alignment.
-        Result = (UObjectBase*)FMemory::Malloc( AlignedSize );
-    }
+
+    EngineExit();
 }
 ```
-{: file="UObjectGlobals.h"}
+{:file="Launch.cpp"}
+<br/>
 
+---
+## GEngineLoop.PreInit
+LoadCoreModules
+: _CoreUObject_
 
-```cpp
-void UObjectBase::AddObject(FName InName, EInternalObjectFlags InSetInternalFlags)
-{
-    GUObjectArray.AllocateUObjectIndex(this);
-    check(InName != NAME_None && InternalIndex >= 0);
-}
-```
-{: file="UObjectBase.cpp"}
+LoadPreInitModules
+: _Engine_
+: _Renderer_
+: _AnimGraphRuntime_
+: _FPlatformApplicationMisc::LoadPreInitModules();_
+: _\<Client> SlateRHIRenderer_
+: _Landscape_
+: _RenderCore_
+: _\<Editor> TextureCompressor_
+: _\<Editor> AudioEditor_
+: _\<Editor> AnimationModifiers_
 
+AppInit
+: _FPlatformMisc::PlatformPreInit();_
+: _LoadModules(ELoadingPhase::EarliestPossible)_
+: _LoadModules(ELoadingPhase::PostConfigInit)_
+: _LoadModulesForProject(ELoadingPhase::PostSplashScreen)_
+: _LoadModulesForProject(ELoadingPhase::PreEarlyLoadingScreen)_
 
-```cpp
-void FUObjectArray::AllocateUObjectIndex(UObjectBase* Object, bool bMergingThreads /*= false*/)
-{
-    // Add to global table.
-    FUObjectItem* ObjectItem = IndexToObject(Index);
+LoadStartupCoreModules
+: _Core_
+: _Networking_
+: _FPlatformApplicationMisc::LoadStartupModules();_
+: _Messaging_
+: _\<Client> MRMesh_
+: _\<Editor> UnrealEd_
+: _\<Editor> EditorStyle_
+: _\<Client> LandscapeEditorUtilities_
+: _\<Client> SlateCore_
+: _\<Client> UMG_
+: _\<Editor> CollisionAnalyzer_
+: _\<Editor> BehaviorTreeEditor_
+: _\<Editor> GameplayTasksEditor_
+: _\<Editor> AudioEditor_
+: _\<Client> Overlay_
+: _MediaAssets_
+: _ClothingSystemRuntimeNv_
+: _\<Editor> ClothingSystemEditor_
+: _PacketHandler_
+: _NetworkReplayStreaming_
 
-    // At this point all not-compiled-in objects are not fully constructed yet and this is the earliest we can mark them as such
-    ObjectItem->SetFlags(EInternalObjectFlags::PendingConstruction);
-    ObjectItem->Object = Object;		
-    Object->InternalIndex = Index;
-}
-```
-{: file="UObjectArray.cpp"}
+PreInitPostStartupScreen
+: _LoadModules(ELoadingPhase::EarliestPossible)_
+: _LoadModules(ELoadingPhase::PreDefault)_
+: _LoadModules(ELoadingPhase::Default)_
+: _LoadModules(ELoadingPhase::PostDefault)_
 
+---
+1. 모듈이 로드될 때, 엔진은 해당 모듈에 정의된 모든 UObject 클래스 등록
+`FModuleDescriptor::LoadModulesForPhase`
+- Replection 시스템에 의해 클래스들을 인식
+- 각 CDO(Class-Default-Object)를 구성 [CDO란 기본 상태의 클래스]
+
+2. IModuleInterface::StartupModule 호출
 
 <br/>
 
 ---
-## Destroy Object
-![](/assets/img/ue/uobject-destroy-object.png)
+## GEngineLoop.Init
 
 ```cpp
-bool IncrementalDestroyGarbage(bool bUseTimeLimit, float TimeLimit)
+int32 FEngineLoop::Init()
 {
-    while (GObjCurrentPurgeObjectIndex < GUnreachableObjects.Num())
-    {
-        UObject* Object = static_cast<UObject*>(ObjectItem->Object);
-        // Send FinishDestroy message.
-        Object->ConditionalFinishDestroy();
-    }
-    
-    if (GObjFinishDestroyHasBeenRoutedToAllObjects && !bTimeLimitReached)
-    {
-        // Perform actual object deletion.
-        GAsyncPurge->TickPurge(bUseTimeLimit, TimeLimit, GCStartTime);		
-    }
+    GEngine = NewObject<UEngine>(GetTransientPackage(), EngineClass);
+    GEngine->ParseCommandline();
+    GEngine->Init(this);
+    FCoreDelegates::OnPostEngineInit.Broadcast();
+
+    IProjectManager::Get().LoadModulesForProject(ELoadingPhase::PostEngineInit);
+    IPluginManager::Get().LoadModulesForEnabledPlugins(ELoadingPhase::PostEngineInit);
+
+    GEngine->Start();
+    GIsRunning = true;
+    FCoreDelegates::OnFEngineLoopInitComplete.Broadcast();
 }
 ```
-{: file="GarbageCollection.cpp"}
+{:file="LaunchEngineLoop.cpp"}
 
+<b>UGameEngine::Init</b>
+- Create GameInstance
+- \<Client> Create GameViewportClient
+- \<Client> Create LocalPlayer
 
-```cpp
-bool UObject::ConditionalFinishDestroy()
-{
-    check(IsValidLowLevel());
-    if( !HasAnyFlags(RF_FinishDestroyed) )
-    {
-        SetFlags(RF_FinishDestroyed);
-
-        FinishDestroy();
-        
-        // Make sure this object can't be found through any delete listeners (annotation maps etc) after it's been FinishDestroyed
-        GUObjectArray.RemoveObjectFromDeleteListeners(this);
-    }
-}
-```
-{: file="Obj.cpp"}
-
-
-```cpp
-/** [GAME THREAD] Ticks the purge process on the game thread */
-void TickPurge(bool bUseTimeLimit, float TimeLimit, double StartTime)
-{
-    bool bCanStartDestroyingGameThreadObjects = true;
-    if (!Thread)
-    {
-        // If we're running single-threaded we need to tick the main loop here too
-        LastUnreachableObjectsCount = GUnreachableObjects.Num();
-        bCanStartDestroyingGameThreadObjects = TickDestroyObjects<false>(bUseTimeLimit, TimeLimit, StartTime);
-    }
-    if (bCanStartDestroyingGameThreadObjects)
-    {
-        do
-        {
-            // Deal with objects that couldn't be destroyed on the worker thread. This will do nothing when running single-threaded
-            bool bFinishedDestroyingObjectsOnGameThread = TickDestroyGameThreadObjects(bUseTimeLimit, TimeLimit, StartTime);
-            if (!Thread && bFinishedDestroyingObjectsOnGameThread)
-            {
-                // This only gets triggered here in single-threaded mode
-                FinishedPurgeEvent->Trigger();
-            }
-        } while (!bUseTimeLimit && !IsFinished());
-    }
-}
-
-/** [GAME THREAD] Destroys objects that are unreachable and couldn't be destroyed on the worker thread */
-bool TickDestroyGameThreadObjects(bool bUseTimeLimit, float TimeLimit, double StartTime)
-{
-    while (NumObjectsDestroyedOnGameThread < LocalNumObjectsToDestroyOnGameThread && ObjCurrentPurgeObjectIndexOnGameThread < GUnreachableObjects.Num())
-    {
-        FUObjectItem* ObjectItem = GUnreachableObjects[ObjCurrentPurgeObjectIndexOnGameThread];			
-        if (ObjectItem)
-        {
-            GUnreachableObjects[ObjCurrentPurgeObjectIndexOnGameThread] = nullptr;
-            UObject* Object = (UObject*)ObjectItem->Object;
-            Object->~UObject();
-            GUObjectAllocator.FreeUObject(Object);
-            ++ProcessedObjectsCount;
-            ++NumObjectsDestroyedOnGameThread;
-        }
-        ++ObjCurrentPurgeObjectIndexOnGameThread;
-    }
-}
-```
-{:file="GarbageCollection.cpp"}
-
-
-```cpp
-/**
- * Final destructor, removes the object from the object array, and indirectly, from any annotations
- **/
-UObjectBase::~UObjectBase()
-{
-    // If not initialized, skip out.
-    if( UObjectInitialized() && ClassPrivate && !GIsCriticalError )
-    {
-        // Validate it.
-        check(IsValidLowLevel());
-        check(GetFName() == NAME_None);
-        GUObjectArray.FreeUObjectIndex(this);
-    }
-}
-```
-{: file="UObjectBase.cpp"}
-
-
-```cpp
-void FUObjectAllocator::FreeUObject(UObjectBase *Object) const
-{
-    if( ResidesInPermanentPool(Object) == false )
-    {
-        FMemory::Free(Object);
-    }
-}
-```
-{: file="UObjectAllocator.cpp"}
-
-
-<br/>
-
----
-## TWeakObjectPtr
-![](/assets/img/ue/uobject-uobject-array.png)
-
-
-```cpp
-struct FWeakObjectPtr
-{
-    int32		ObjectIndex;
-    int32		ObjectSerialNumber;
-};
-
-// Allocate Serial number
-void FWeakObjectPtr::operator=(const class UObject *Object)
-{
-    if (Object // && UObjectInitialized() we might need this at some point, but it is a speed hit we would prefer to avoid
-        )
-    {
-        ObjectIndex = GUObjectArray.ObjectToIndex((UObjectBase*)Object);
-        ObjectSerialNumber = GUObjectArray.AllocateSerialNumber(ObjectIndex);
-        checkSlow(SerialNumbersMatch());
-    }
-    else
-    {
-        Reset();
-    }
-}
-```
-{:file="WeakObjectPtr.h"}
-
-
-```cpp
-int32 FUObjectArray::AllocateSerialNumber(int32 Index)
-{
-    FUObjectItem* ObjectItem = IndexToObject(Index);
-    checkSlow(ObjectItem);
-    
-    volatile int32 *SerialNumberPtr = &ObjectItem->SerialNumber;
-    int32 SerialNumber = *SerialNumberPtr;
-    if (!SerialNumber)
-    {
-        SerialNumber = MasterSerialNumber.Increment();
-        UE_CLOG(SerialNumber <= START_SERIAL_NUMBER, LogUObjectArray, Fatal, TEXT("UObject serial numbers overflowed (trying to allocate serial number %d)."), SerialNumber);
-        int32 ValueWas = FPlatformAtomics::InterlockedCompareExchange((int32*)SerialNumberPtr, SerialNumber, 0);
-        if (ValueWas != 0)
-        {
-            // someone else go it first, use their value
-            SerialNumber = ValueWas;
-        }
-    }
-    checkSlow(SerialNumber > START_SERIAL_NUMBER);
-    return SerialNumber;
-}
-```
-{:file="UObjectArray.cpp"}
+<b>UGameEngine::Start</b>
+- GameInstance->StartGameInstance
+  - UEngine::Browse
+    - UEngine::LoadMap
