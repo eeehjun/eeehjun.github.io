@@ -2,8 +2,8 @@
 title: Blueprint
 author: eeehjun
 date: 2021-12-23 05:27:00 +0900
-categories: [Unreal Engine, Blueprint]
-tags: [ue4]
+categories: [Unreal Engine, Wiki]
+tags: [ue4, Engine]
 ---
 
 

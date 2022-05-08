@@ -1,9 +1,9 @@
 ---
 title: Gameplay ability
 author: eeehjun
-date: 2021-12-05 08:35:00 -0500
-categories: [Unreal Engine, Ability System]
-tags: [ue4]
+date: 2021-12-05 08:35:00 +0900
+categories: [Unreal Engine, Wiki]
+tags: [ue4, Gameplay]
 ---
 
 

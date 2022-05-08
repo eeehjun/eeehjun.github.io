@@ -2,8 +2,8 @@
 title: "[ue4] Build Graph"
 author: eeehjun
 date: 2021-12-24 00:32:00 +0900
-categories: [Unreal Engine, Build System]
-tags: [ue4]
+categories: [Unreal Engine, Wiki]
+tags: [ue4, Build]
 ---
 
 
